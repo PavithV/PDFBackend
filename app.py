@@ -8,8 +8,14 @@ from PyPDF2 import PdfReader, PdfWriter
 import tempfile
 import shutil
 
-# Set all compression libraries as unavailable for now
-PIKEPDF_AVAILABLE = False
+# Try to import compression libraries
+try:
+    import pikepdf
+    PIKEPDF_AVAILABLE = True
+except ImportError:
+    PIKEPDF_AVAILABLE = False
+
+# Set PyMuPDF as unavailable for now
 PYMUPDF_AVAILABLE = False
 
 app = Flask(__name__)
@@ -35,14 +41,21 @@ def allowed_file(filename):
 
 def compress_pdf(input_path, output_path, compression_level='medium'):
     """
-    Compress PDF using enhanced PyPDF2 compression techniques.
+    Compress PDF using pikepdf for better compression.
     Returns the compression ratio.
     """
     try:
         # Get original file size
         original_size = os.path.getsize(input_path)
         
-        # Use enhanced PyPDF2 compression
+        # Try pikepdf first for better compression
+        if PIKEPDF_AVAILABLE:
+            try:
+                return compress_with_pikepdf(input_path, output_path, original_size, compression_level)
+            except Exception as e:
+                print(f"Pikepdf compression failed, falling back to PyPDF2: {e}")
+        
+        # Fallback to PyPDF2 with enhanced compression
         return compress_with_pypdf2(input_path, output_path, original_size, compression_level)
         
     except Exception as e:
@@ -164,6 +177,70 @@ def compress_with_advanced_pypdf2(input_path, output_path, original_size, compre
         
     except Exception as e:
         raise Exception(f"Advanced PyPDF2 compression failed: {str(e)}")
+
+def compress_with_pikepdf(input_path, output_path, original_size, compression_level='medium'):
+    """
+    Compress PDF using pikepdf with aggressive compression techniques.
+    """
+    try:
+        # Open the PDF with pikepdf
+        pdf = pikepdf.Pdf.open(input_path)
+        
+        # Apply aggressive compression based on level
+        if compression_level == 'extreme':
+            # Extreme compression - maximum file size reduction
+            save_settings = {
+                'compress_streams': True,
+                'preserve_pdfa': False,
+                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
+                'deterministic_id': False,
+                'normalize_content': True,
+                'recompress_flate': True
+            }
+        elif compression_level == 'high':
+            # Maximum compression - aggressive compression
+            save_settings = {
+                'compress_streams': True,
+                'preserve_pdfa': False,
+                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
+                'deterministic_id': False,
+                'normalize_content': True,
+                'recompress_flate': True
+            }
+            
+        elif compression_level == 'low':
+            # Minimal compression - preserve quality
+            save_settings = {
+                'compress_streams': True,
+                'preserve_pdfa': True,
+                'object_stream_mode': pikepdf.ObjectStreamMode.preserve,
+                'deterministic_id': True,
+                'normalize_content': False
+            }
+        else:  # medium
+            # Balanced compression
+            save_settings = {
+                'compress_streams': True,
+                'preserve_pdfa': False,
+                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
+                'deterministic_id': False,
+                'normalize_content': True,
+                'recompress_flate': True
+            }
+        
+        # Save with compression settings
+        pdf.save(output_path, **save_settings)
+        
+        # Get compressed file size
+        compressed_size = os.path.getsize(output_path)
+        
+        # Calculate compression ratio
+        compression_ratio = ((original_size - compressed_size) / original_size) * 100
+        
+        return compression_ratio, original_size, compressed_size
+        
+    except Exception as e:
+        raise Exception(f"Pikepdf compression failed: {str(e)}")
 
 
 
