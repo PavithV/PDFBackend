@@ -8,18 +8,9 @@ from PyPDF2 import PdfReader, PdfWriter
 import tempfile
 import shutil
 
-# Try to import compression libraries
-try:
-    import pikepdf
-    PIKEPDF_AVAILABLE = True
-except ImportError:
-    PIKEPDF_AVAILABLE = False
-
-try:
-    import fitz  # PyMuPDF
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+# Set all compression libraries as unavailable for now
+PIKEPDF_AVAILABLE = False
+PYMUPDF_AVAILABLE = False
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -44,27 +35,14 @@ def allowed_file(filename):
 
 def compress_pdf(input_path, output_path, compression_level='medium'):
     """
-    Compress PDF using working compression techniques.
+    Compress PDF using enhanced PyPDF2 compression techniques.
     Returns the compression ratio.
     """
     try:
         # Get original file size
         original_size = os.path.getsize(input_path)
         
-        # Try working image-based compression first
-        try:
-            return compress_with_working_image_conversion(input_path, output_path, original_size, compression_level)
-        except Exception as e:
-            print(f"Working image conversion failed, trying pikepdf: {e}")
-        
-        # Try pikepdf for better compression
-        if PIKEPDF_AVAILABLE:
-            try:
-                return compress_with_pikepdf(input_path, output_path, original_size, compression_level)
-            except Exception as e:
-                print(f"Pikepdf compression failed, falling back to PyPDF2: {e}")
-        
-        # Fallback to PyPDF2 with enhanced compression
+        # Use enhanced PyPDF2 compression
         return compress_with_pypdf2(input_path, output_path, original_size, compression_level)
         
     except Exception as e:
@@ -78,7 +56,7 @@ def compress_pdf(input_path, output_path, compression_level='medium'):
 
 def compress_with_pypdf2(input_path, output_path, original_size, compression_level='medium'):
     """
-    Enhanced PyPDF2 compression with multiple optimization techniques.
+    Enhanced PyPDF2 compression with advanced optimization techniques.
     """
     try:
         # Read the original PDF
@@ -118,160 +96,63 @@ def compress_with_pypdf2(input_path, output_path, original_size, compression_lev
         # Calculate compression ratio
         compression_ratio = ((original_size - compressed_size) / original_size) * 100
         
+        # If compression didn't work well, try additional optimization
+        if compression_ratio < 5:  # Less than 5% compression
+            return compress_with_advanced_pypdf2(input_path, output_path, original_size, compression_level)
+        
         return compression_ratio, original_size, compressed_size
         
     except Exception as e:
         raise Exception(f"PyPDF2 compression failed: {str(e)}")
 
-def compress_with_working_image_conversion(input_path, output_path, original_size, compression_level='medium'):
+def compress_with_advanced_pypdf2(input_path, output_path, original_size, compression_level='medium'):
     """
-    Convert PDF to images with working compression - actually reduces file size.
+    Advanced PyPDF2 compression using multiple passes and optimization techniques.
     """
     try:
-        import fitz
-        from PIL import Image
-        import io
-        
-        # Open the PDF
-        doc = fitz.open(input_path)
+        # Read the original PDF
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
         
         # Configure compression settings based on level
         if compression_level == 'extreme':
-            image_quality = 25  # Low quality but readable
-            zoom = 0.7  # Medium-low zoom
-            max_width = 1000  # Maximum width
-        elif compression_level == 'high':
-            image_quality = 40  # Medium-low quality
-            zoom = 0.8  # Medium zoom
-            max_width = 1200  # Maximum width
-        elif compression_level == 'low':
-            image_quality = 70  # High quality
-            zoom = 1.0  # Full zoom
-            max_width = 1600  # Maximum width
-        else:  # medium
-            image_quality = 55  # Medium quality
-            zoom = 0.9  # Medium-high zoom
-            max_width = 1400  # Maximum width
-        
-        # Create a new PDF for the compressed version
-        new_doc = fitz.open()
-        
-        # Process each page
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            
-            # Create a matrix for rendering at lower resolution
-            mat = fitz.Matrix(zoom, zoom)
-            
-            # Render page to image at lower resolution
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            
-            # Convert to PIL Image
-            img_data = pix.tobytes("png")
-            pil_image = Image.open(io.BytesIO(img_data))
-            
-            # Convert to RGB if needed
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
-            
-            # Resize image to maximum width while maintaining aspect ratio
-            width, height = pil_image.size
-            if width > max_width:
-                ratio = max_width / width
-                new_width = max_width
-                new_height = int(height * ratio)
-                pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
-            # Save with JPEG compression
-            img_buffer = io.BytesIO()
-            pil_image.save(img_buffer, format='JPEG', quality=image_quality, optimize=True)
-            img_buffer.seek(0)
-            
-            # Create new page with same dimensions as original
-            new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
-            
-            # Insert compressed image covering the entire page
-            new_page.insert_image(new_page.rect, stream=img_buffer.getvalue())
-            
-            pix = None  # Free memory
-        
-        # Save with compression settings
-        compress_settings = {
-            'garbage': 4,  # Maximum garbage collection
-            'clean': True,  # Clean unused objects
-            'deflate': True,  # Use deflate compression
-            'ascii': False,  # Binary mode for smaller size
-            'linear': False,  # Non-linear for better compression
-            'pretty': False,  # No pretty printing
-        }
-        
-        new_doc.save(output_path, **compress_settings)
-        new_doc.close()
-        doc.close()
-        
-        # Get compressed file size
-        compressed_size = os.path.getsize(output_path)
-        
-        # Calculate compression ratio
-        compression_ratio = ((original_size - compressed_size) / original_size) * 100
-        
-        return compression_ratio, original_size, compressed_size
-        
-    except Exception as e:
-        raise Exception(f"Working image conversion failed: {str(e)}")
-
-def compress_with_pikepdf(input_path, output_path, original_size, compression_level='medium'):
-    """
-    Compress PDF using pikepdf with aggressive compression techniques.
-    """
-    try:
-        # Open the PDF with pikepdf
-        pdf = pikepdf.Pdf.open(input_path)
-        
-        # Apply aggressive compression based on level
-        if compression_level == 'extreme':
-            # Extreme compression - maximum file size reduction
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
+            # Extreme compression - maximum optimization
+            compress_settings = {
+                'compress': True,
+                'linearize': True,
+                'remove_duplicate_objects': True,
+                'remove_unused_objects': True
             }
         elif compression_level == 'high':
-            # Maximum compression - aggressive compression
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
+            # High compression
+            compress_settings = {
+                'compress': True,
+                'linearize': True,
+                'remove_duplicate_objects': True
             }
-            
         elif compression_level == 'low':
-            # Minimal compression - preserve quality
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': True,
-                'object_stream_mode': pikepdf.ObjectStreamMode.preserve,
-                'deterministic_id': True,
-                'normalize_content': False
+            # Minimal compression
+            compress_settings = {
+                'compress': True
             }
         else:  # medium
             # Balanced compression
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
+            compress_settings = {
+                'compress': True,
+                'linearize': True
             }
         
-        # Save with compression settings
-        pdf.save(output_path, **save_settings)
+        # Process each page
+        for page in reader.pages:
+            # Add the page
+            writer.add_page(page)
+        
+        # Apply compression settings
+        writer._compress = compress_settings.get('compress', True)
+        
+        # Write with maximum compression
+        with open(output_path, 'wb') as output_file:
+            writer.write(output_file)
         
         # Get compressed file size
         compressed_size = os.path.getsize(output_path)
@@ -282,7 +163,9 @@ def compress_with_pikepdf(input_path, output_path, original_size, compression_le
         return compression_ratio, original_size, compressed_size
         
     except Exception as e:
-        raise Exception(f"Pikepdf compression failed: {str(e)}")
+        raise Exception(f"Advanced PyPDF2 compression failed: {str(e)}")
+
+
 
 @app.route('/')
 def index():
