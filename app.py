@@ -23,7 +23,7 @@ PIKEPDF_AVAILABLE = False
 PYMUPDF_AVAILABLE = False
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins=['*'], methods=['GET', 'POST', 'OPTIONS'])  # Enable CORS for all routes and origins
 app.secret_key = 'your-secret-key-here'  # Change this in production
 
 # Configuration
@@ -416,6 +416,15 @@ def download_file(download_id, filename):
 def health_check():
     """Health check endpoint."""
     return jsonify({'status': 'healthy'})
+
+@app.route('/test')
+def test_endpoint():
+    """Test endpoint for debugging."""
+    return jsonify({
+        'message': 'Backend is working!',
+        'timestamp': '2024-08-12',
+        'cors_enabled': True
+    })
 
 if __name__ == '__main__':
     # Use environment variable for port (Heroku) or default to 5000
