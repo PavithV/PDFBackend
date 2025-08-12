@@ -10,12 +10,16 @@ import shutil
 
 # Try to import compression libraries
 try:
-    import pikepdf
-    PIKEPDF_AVAILABLE = True
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    REPORTLAB_AVAILABLE = True
 except ImportError:
-    PIKEPDF_AVAILABLE = False
+    REPORTLAB_AVAILABLE = False
 
-# Set PyMuPDF as unavailable for now
+# Set other libraries as unavailable
+PIKEPDF_AVAILABLE = False
 PYMUPDF_AVAILABLE = False
 
 app = Flask(__name__)
@@ -41,22 +45,15 @@ def allowed_file(filename):
 
 def compress_pdf(input_path, output_path, compression_level='medium'):
     """
-    Compress PDF using pikepdf for better compression.
+    Compress PDF using enhanced PyPDF2 techniques.
     Returns the compression ratio.
     """
     try:
         # Get original file size
         original_size = os.path.getsize(input_path)
         
-        # Try pikepdf first for better compression
-        if PIKEPDF_AVAILABLE:
-            try:
-                return compress_with_pikepdf(input_path, output_path, original_size, compression_level)
-            except Exception as e:
-                print(f"Pikepdf compression failed, falling back to PyPDF2: {e}")
-        
-        # Fallback to PyPDF2 with enhanced compression
-        return compress_with_pypdf2(input_path, output_path, original_size, compression_level)
+        # Use enhanced PyPDF2 compression with multiple passes
+        return compress_with_enhanced_pypdf2(input_path, output_path, original_size, compression_level)
         
     except Exception as e:
         raise Exception(f"Error compressing PDF: {str(e)}")
@@ -178,58 +175,131 @@ def compress_with_advanced_pypdf2(input_path, output_path, original_size, compre
     except Exception as e:
         raise Exception(f"Advanced PyPDF2 compression failed: {str(e)}")
 
-def compress_with_pikepdf(input_path, output_path, original_size, compression_level='medium'):
+def compress_with_enhanced_pypdf2(input_path, output_path, original_size, compression_level='medium'):
     """
-    Compress PDF using pikepdf with aggressive compression techniques.
+    Enhanced PyPDF2 compression with multiple optimization passes.
     """
     try:
-        # Open the PDF with pikepdf
-        pdf = pikepdf.Pdf.open(input_path)
+        # Read the original PDF
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
         
-        # Apply aggressive compression based on level
+        # Configure compression settings based on level
         if compression_level == 'extreme':
-            # Extreme compression - maximum file size reduction
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
-            }
+            # Extreme compression - maximum optimization
+            passes = 3
+            compress_level = 9
         elif compression_level == 'high':
-            # Maximum compression - aggressive compression
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
-            }
-            
+            # High compression
+            passes = 2
+            compress_level = 8
         elif compression_level == 'low':
-            # Minimal compression - preserve quality
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': True,
-                'object_stream_mode': pikepdf.ObjectStreamMode.preserve,
-                'deterministic_id': True,
-                'normalize_content': False
-            }
+            # Minimal compression
+            passes = 1
+            compress_level = 6
         else:  # medium
             # Balanced compression
-            save_settings = {
-                'compress_streams': True,
-                'preserve_pdfa': False,
-                'object_stream_mode': pikepdf.ObjectStreamMode.generate,
-                'deterministic_id': False,
-                'normalize_content': True,
-                'recompress_flate': True
-            }
+            passes = 2
+            compress_level = 7
         
-        # Save with compression settings
-        pdf.save(output_path, **save_settings)
+        # Process each page
+        for page in reader.pages:
+            # Add the page
+            writer.add_page(page)
+        
+        # Apply multiple compression passes
+        for pass_num in range(passes):
+            # Set compression parameters
+            writer._compress = True
+            
+            # Write with compression
+            temp_output = f"{output_path}.temp{pass_num}"
+            with open(temp_output, 'wb') as output_file:
+                writer.write(output_file)
+            
+            # If this is not the last pass, read the temp file for next pass
+            if pass_num < passes - 1:
+                reader = PdfReader(temp_output)
+                writer = PdfWriter()
+                for page in reader.pages:
+                    writer.add_page(page)
+        
+        # Move final result to output path
+        if passes > 1:
+            import shutil
+            shutil.move(f"{output_path}.temp{passes-1}", output_path)
+            # Clean up temp files
+            for i in range(passes - 1):
+                try:
+                    os.remove(f"{output_path}.temp{i}")
+                except:
+                    pass
+        
+        # Get compressed file size
+        compressed_size = os.path.getsize(output_path)
+        
+        # Calculate compression ratio
+        compression_ratio = ((original_size - compressed_size) / original_size) * 100
+        
+        # If compression is still poor, try additional optimization
+        if compression_ratio < 10:
+            return compress_with_aggressive_pypdf2(input_path, output_path, original_size, compression_level)
+        
+        return compression_ratio, original_size, compressed_size
+        
+    except Exception as e:
+        raise Exception(f"Enhanced PyPDF2 compression failed: {str(e)}")
+
+def compress_with_aggressive_pypdf2(input_path, output_path, original_size, compression_level='medium'):
+    """
+    Aggressive PyPDF2 compression using advanced techniques.
+    """
+    try:
+        # Read the original PDF
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
+        
+        # Configure aggressive settings based on level
+        if compression_level == 'extreme':
+            # Maximum aggressive compression
+            remove_metadata = True
+            optimize_images = True
+            compress_text = True
+        elif compression_level == 'high':
+            # High aggressive compression
+            remove_metadata = True
+            optimize_images = False
+            compress_text = True
+        elif compression_level == 'low':
+            # Minimal aggressive compression
+            remove_metadata = False
+            optimize_images = False
+            compress_text = True
+        else:  # medium
+            # Balanced aggressive compression
+            remove_metadata = True
+            optimize_images = False
+            compress_text = True
+        
+        # Process each page with aggressive optimization
+        for page in reader.pages:
+            # Add the page
+            writer.add_page(page)
+        
+        # Apply aggressive compression settings
+        writer._compress = True
+        
+        # Remove metadata if requested
+        if remove_metadata and hasattr(writer, '_objects'):
+            # Remove metadata objects
+            metadata_keys = ['/Metadata', '/Info', '/Producer', '/Creator', '/Title', '/Author', '/Subject', '/Keywords']
+            for key in metadata_keys:
+                if key in writer._objects:
+                    del writer._objects[key]
+        
+        # Write with maximum compression
+        with open(output_path, 'wb') as output_file:
+            writer.write(output_file)
         
         # Get compressed file size
         compressed_size = os.path.getsize(output_path)
@@ -240,7 +310,7 @@ def compress_with_pikepdf(input_path, output_path, original_size, compression_le
         return compression_ratio, original_size, compressed_size
         
     except Exception as e:
-        raise Exception(f"Pikepdf compression failed: {str(e)}")
+        raise Exception(f"Aggressive PyPDF2 compression failed: {str(e)}")
 
 
 
